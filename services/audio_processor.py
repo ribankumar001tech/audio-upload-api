@@ -1,3 +1,5 @@
+# services/audio_processor.py
+
 from services.sarvam_service import transcribe_audio
 from services.context_ollama import analyze_transcription
 
@@ -16,7 +18,7 @@ def process_audio(audio_path):
         print("\n==================================\n")
 
         # =====================================================
-        # GET STRUCTURED TRANSCRIPT
+        # GET SEGMENTS
         # =====================================================
         raw_segments = transcription_result.get("segments", [])
 
@@ -26,45 +28,14 @@ def process_audio(audio_path):
             )
 
         # =====================================================
-        # NORMALIZE SPEAKERS
+        # DYNAMIC SPEAKER MAPPING
         # =====================================================
-        def normalize_speaker(speaker, last_speaker=None):
+        speaker_map = {}
+        speaker_counter = 1
 
-            if not speaker:
-                speaker = ""
-
-            speaker = str(speaker).strip().lower()
-
-            # Sarvam generic speakers
-            if speaker in ["speaker 1", "speaker1"]:
-                return "Agent"
-
-            if speaker in ["speaker 2", "speaker2"]:
-                return "Customer"
-
-            # Already correct
-            if speaker == "agent":
-                return "Agent"
-
-            if speaker == "customer":
-                return "Customer"
-
-            # Unknown / empty fallback
-            if speaker in ["", "unknown", "none", "null"]:
-                if last_speaker == "Agent":
-                    return "Customer"
-                return "Agent"
-
-            # Keep original if custom speaker exists
-            return speaker.title()
-
-        # =====================================================
-        # BUILD CLEAN TRANSCRIPT
-        # =====================================================
         cleaned_segments = []
         formatted_segments = []
 
-        last_speaker = None
         id_counter = 1
 
         for seg in raw_segments:
@@ -74,12 +45,21 @@ def process_audio(audio_path):
             if not text:
                 continue
 
-            speaker = normalize_speaker(
-                seg.get("speaker"),
-                last_speaker
-            )
+            raw_speaker = str(
+                seg.get("speaker", "")
+            ).strip()
 
-            last_speaker = speaker
+            # Empty speaker fallback
+            if not raw_speaker:
+                raw_speaker = f"unknown_{id_counter}"
+
+            # Dynamic speaker mapping
+            if raw_speaker not in speaker_map:
+
+                speaker_map[raw_speaker] = f"Speaker {speaker_counter}"
+                speaker_counter += 1
+
+            speaker = speaker_map[raw_speaker]
 
             clean_segment = {
                 "call_id": seg.get("call_id", 1),
@@ -96,6 +76,7 @@ def process_audio(audio_path):
 
             cleaned_segments.append(clean_segment)
 
+            # Transcript for AI
             formatted_segments.append(
                 f"{speaker}: {text}"
             )
@@ -103,39 +84,61 @@ def process_audio(audio_path):
             id_counter += 1
 
         # =====================================================
-        # TRANSCRIPT FOR LLM
+        # TRANSCRIPT FOR AI
         # =====================================================
         transcript_text = "\n".join(formatted_segments).strip()
 
         if not transcript_text:
-            raise Exception("Transcript text is empty after conversion")
+            raise Exception(
+                "Transcript text is empty after conversion"
+            )
 
         print("\n====== FORMATTED TRANSCRIPT ======\n")
         print(transcript_text)
         print("\n==================================\n")
 
         # =====================================================
-        # ANALYZE TRANSCRIPT
+        # AI ANALYSIS
         # =====================================================
-        analysis_result = analyze_transcription(transcript_text)
+        analysis_result = analyze_transcription(
+            transcript_text
+        )
 
         print("\n====== ANALYSIS RESULT ======\n")
         print(analysis_result)
         print("\n=============================\n")
 
+        # =====================================================
+        # SAFE FALLBACK
+        # =====================================================
         if not analysis_result:
             analysis_result = {}
 
+        final_tags = analysis_result.get("tags", {})
+
         # =====================================================
-        # RETURN FINAL RESPONSE
+        # DEFAULT TAGS IF AI FAILS
+        # =====================================================
+        if not final_tags:
+
+            final_tags = {
+                "type": [],
+                "tone": ["Neutral"],
+                "pattern": "Occasional",
+                "frequency": "Rare",
+                "focus_area": "General",
+                "emotional_signal": "Neutral"
+            }
+
+        # =====================================================
+        # FINAL RESPONSE
         # =====================================================
         return {
             "success": True,
-            "transcript": cleaned_segments,
-            "analysis": {
-                "sensitive_words": analysis_result.get("sensitive_words", []),
-            },
-            "tags": analysis_result.get("tags", {}),
+            "job_id": transcription_result.get("job_id"),
+            "status": "completed",
+            "tags": final_tags,
+            "transcript": cleaned_segments
         }
 
     except Exception as e:

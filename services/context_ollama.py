@@ -136,12 +136,12 @@ def _build_prompt_template(call_category=None, call_type=None):
         '    {{"type":"<string>","severity":"<low|medium|high|critical>","message":"<string>","icon":"<emoji>"}}\n'
         '  ],\n\n'
         '  "tags": {\n'
-        '    "type": ["Harassment","Insult","Manipulation","Intimidation","Mockery"],\n'
-        '    "tone": ["Hostile","Aggressive","Sarcastic","Dismissive","Threatening"],\n'
-        '    "pattern": "Isolated|Occasional|Frequent|Escalating|Cyclical",\n'
-        '    "frequency": "Prevalent|Frequent|Occasional|Rare|Never",\n'
-        '    "focus_area": "Physical|Mental|Academic|Personal|Offensive",\n'
-        '    "emotional_signal": "Nervous|Defensive|Quiet|Doubtful|Dazed"\n'
+        '    "type": ["Support Call","Inquiry","Complaint","Feedback","Escalation","Conversation"],\n'
+        '    "tone": ["Polite","Neutral","Professional","Friendly","Frustrated","Confused","Urgent","Aggressive"],\n'
+        '    "pattern": "<Short Responses|Detailed Discussion|Issue Resolution|Information Exchange|Repeated Clarification>",\n'
+        '    "frequency": "<Very High|High|Medium|Low>",\n'
+        '    "focus_area": "<Account Support|Billing|Technical Support|General Inquiry|Password Reset|Customer Assistance>",\n'
+        '    "emotional_signal": "<Satisfied|Neutral|Frustrated|Confused|Interested|Concerned>"\n'
         '  },\n\n'
         '  "overall_sentiment": "<Positive|Neutral|Negative>",\n'
         '  "call_direction":    "<Outbound|Inbound — Outbound if agent references previous call/discussion or already knows caller details; Inbound if customer called for new enquiry>",\n'
@@ -182,6 +182,17 @@ def _build_prompt_template(call_category=None, call_type=None):
         '- Evaluate EACH item INDEPENDENTLY by searching for evidence in the transcript.\n'
         '- Do NOT shortcut by returning only checklist.score — the items array is MANDATORY.\n'
         '- For each item, try to include a short phrase from the transcript as evidence. If no direct quote, evidence can be empty [].\n'
+        '- tags must ALWAYS be filled based on transcript behavior and tone.\n'
+        '- Never return empty tags object.\n'
+        '- If conversation is normal, use tone=["Neutral"] and emotional_signal="Neutral".\n'
+        '- tags object is MANDATORY. Never leave it empty.\n'
+        '- tags must ALWAYS contain meaningful values based on the conversation.\n'
+        '- Never return empty arrays in tags.\n'
+        '- Detect actual customer interaction tone from transcript.\n'
+        '- If call is normal customer support conversation use:\n'
+        '  tone=["Professional","Polite"]\n'
+        '  type=["Support Call"]\n'
+        '  emotional_signal="Neutral"\n'
         '- Return ONLY the JSON object, nothing else.\n'
     )
     return prompt
@@ -702,6 +713,7 @@ def _build_fallback(transcript: str) -> Dict:
             {"category": "Customer Frustration", "words": [], "severity": "medium",   "count": 0, "icon": "😤", "color": "medium"},
             {"category": "Cancellation Intent",  "words": [], "severity": "high",     "count": 0, "icon": "🚪", "color": "high"},
         ],
+        "tags": {},
         "alerts": [],
         "speaker_analysis": _compute_speaker_analysis(transcript),
         "word_cloud":       _compute_word_cloud(transcript),
@@ -782,7 +794,7 @@ def analyze_transcription(transcript_text: str, job_id=None, status_obj=None) ->
         result = fallback
     else:
         # Check for specific missing top-level keys reported in your error
-        critical_keys = ["summary", "sentiment", "call_quality", "agent_behavior", "checklist_results"]
+        critical_keys = ["summary", "sentiment", "call_quality", "agent_behavior", "checklist_results", "tags"]
         for key in critical_keys:
             if key not in result or not result[key]:
                 log_step(job_id, f"⚠️  LLM dropped '{key}' — injecting fallback schema", status_obj)
@@ -791,6 +803,57 @@ def analyze_transcription(transcript_text: str, job_id=None, status_obj=None) ->
     # 4. ALWAYS OVERWRITE WITH ACCURATE LOCAL DATA
     # Don't trust LLM for counts/ratios on large files.
     result = _merge_local_fields(result, transcript_text)
+
+    # ---------------------------------------------------
+    # GUARANTEE NON-EMPTY TAGS
+    # ---------------------------------------------------
+    tags = result.get("tags", {})
+
+    if not tags.get("type") or len(tags.get("type", [])) == 0:
+
+        transcript_lower = transcript_text.lower()
+
+        if any(word in transcript_lower for word in [
+            "password", "account", "reset", "login"
+        ]):
+            tags["type"] = ["Support Call"]
+
+        elif any(word in transcript_lower for word in [
+            "problem", "issue", "complaint"
+        ]):
+            tags["type"] = ["Complaint"]
+
+        else:
+            tags["type"] = ["Conversation"]
+
+    if not tags.get("tone") or len(tags.get("tone", [])) == 0:
+
+        if any(word in transcript_text.lower() for word in [
+            "thanks", "thank you", "sure"
+        ]):
+            tags["tone"] = ["Polite"]
+
+        else:
+            tags["tone"] = ["Neutral"]
+
+    if not tags.get("pattern"):
+        tags["pattern"] = "Information Exchange"
+
+    if not tags.get("frequency"):
+        tags["frequency"] = "Low"
+
+    if not tags.get("focus_area"):
+
+        if "password" in transcript_text.lower():
+            tags["focus_area"] = "Password Reset"
+
+        else:
+            tags["focus_area"] = "General Inquiry"
+
+    if not tags.get("emotional_signal"):
+        tags["emotional_signal"] = "Neutral"
+
+    result["tags"] = tags
 
     # 5. RECALCULATE MATH
     # Forces scores to match the boolean flags
