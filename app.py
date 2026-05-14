@@ -23,6 +23,10 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+# =========================================================
+# CHECK ALLOWED FILE
+# =========================================================
+
 def allowed_file(filename):
 
     return (
@@ -139,21 +143,33 @@ def upload_audio():
 
         result = process_audio(file_path)
 
+        print("\n================ RESULT ================\n")
+        print(result)
+        print("\n========================================\n")
+
+        # =====================================================
+        # HANDLE ERRORS
+        # =====================================================
+
+        if result.get("success") is False:
+
+            return jsonify({
+                "job_id": job_id,
+                "status": "failed",
+                "error": result.get("error")
+            }), 500
+
         # =====================================================
         # FINAL RESPONSE
         # =====================================================
 
+
+        # Include analysis in the response (contains sensitive_words)
         final_response = {
             "job_id": job_id,
             "status": "completed",
-
-            # transcript
-            "transcript": result.get("transcript", ""),
-
-            # tags
+            "transcript": result.get("transcript", []),
             "tags": result.get("tags", {}),
-
-            # full ollama analysis
             "analysis": result.get("analysis", {})
         }
 

@@ -1,3 +1,5 @@
+# services/context_ollama.py
+
 import json
 import os
 import re
@@ -133,6 +135,14 @@ def _build_prompt_template(call_category=None, call_type=None):
         '  "alerts": [\n'
         '    {{"type":"<string>","severity":"<low|medium|high|critical>","message":"<string>","icon":"<emoji>"}}\n'
         '  ],\n\n'
+        '  "tags": {\n'
+        '    "type": ["Harassment","Insult","Manipulation","Intimidation","Mockery"],\n'
+        '    "tone": ["Hostile","Aggressive","Sarcastic","Dismissive","Threatening"],\n'
+        '    "pattern": "Isolated|Occasional|Frequent|Escalating|Cyclical",\n'
+        '    "frequency": "Prevalent|Frequent|Occasional|Rare|Never",\n'
+        '    "focus_area": "Physical|Mental|Academic|Personal|Offensive",\n'
+        '    "emotional_signal": "Nervous|Defensive|Quiet|Doubtful|Dazed"\n'
+        '  },\n\n'
         '  "overall_sentiment": "<Positive|Neutral|Negative>",\n'
         '  "call_direction":    "<Outbound|Inbound — Outbound if agent references previous call/discussion or already knows caller details; Inbound if customer called for new enquiry>",\n'
         '  "admission_intent":  "<Hot|Warm|Cold>",\n'
