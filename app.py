@@ -170,7 +170,7 @@ def upload_audio():
             "status": "completed",
             "transcript": result.get("transcript", []),
             "tags": result.get("tags", {}),
-            "analysis": result.get("analysis", {})
+            # "analysis": result.get("analysis", {})
         }
 
         return jsonify(final_response)
