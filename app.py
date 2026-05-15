@@ -143,9 +143,9 @@ def upload_audio():
 
         result = process_audio(file_path)
 
-        print("\n================ RESULT ================\n")
-        print(result)
-        print("\n========================================\n")
+        # print("\n================ RESULT ================\n")
+        # print(result)
+        # print("\n========================================\n")
 
         # =====================================================
         # HANDLE ERRORS

@@ -1,7 +1,9 @@
 # services/audio_processor.py
 
-from services.sarvam_service import transcribe_audio
-from services.context_ollama import analyze_transcription
+from services.sarvam_service import (
+    transcribe_audio,
+    analyze_conversation_tags
+)
 
 
 def process_audio(audio_path):
@@ -12,10 +14,6 @@ def process_audio(audio_path):
         # TRANSCRIBE AUDIO
         # =====================================================
         transcription_result = transcribe_audio(audio_path)
-
-        print("\n====== TRANSCRIPTION RESULT ======\n")
-        print(transcription_result)
-        print("\n==================================\n")
 
         # =====================================================
         # GET SEGMENTS
@@ -76,7 +74,7 @@ def process_audio(audio_path):
 
             cleaned_segments.append(clean_segment)
 
-            # Transcript for AI
+            # Transcript for AI analysis
             formatted_segments.append(
                 f"{speaker}: {text}"
             )
@@ -86,49 +84,68 @@ def process_audio(audio_path):
         # =====================================================
         # TRANSCRIPT FOR AI
         # =====================================================
-        transcript_text = "\n".join(formatted_segments).strip()
+        transcript_text = "\n".join(
+            formatted_segments
+        ).strip()
 
         if not transcript_text:
             raise Exception(
                 "Transcript text is empty after conversion"
             )
 
-        print("\n====== FORMATTED TRANSCRIPT ======\n")
-        print(transcript_text)
-        print("\n==================================\n")
-
         # =====================================================
-        # AI ANALYSIS
+        # SARVAM AI TAG ANALYSIS
         # =====================================================
-        analysis_result = analyze_transcription(
+        tags_result = analyze_conversation_tags(
             transcript_text
         )
 
-        print("\n====== ANALYSIS RESULT ======\n")
-        print(analysis_result)
-        print("\n=============================\n")
+        # =====================================================
+        # SAFE TAG FALLBACK
+        # =====================================================
+        final_tags = {
+            "type": [],
+            "tone": ["Neutral"],
+            "pattern": "Occasional",
+            "frequency": "Rare",
+            "focus_area": "General",
+            "emotional_signal": "Neutral"
+        }
 
         # =====================================================
-        # SAFE FALLBACK
+        # USE AI TAGS IF AVAILABLE
         # =====================================================
-        if not analysis_result:
-            analysis_result = {}
+        if isinstance(tags_result, dict):
 
-        final_tags = analysis_result.get("tags", {})
+            final_tags["type"] = tags_result.get(
+                "type",
+                []
+            )
 
-        # =====================================================
-        # DEFAULT TAGS IF AI FAILS
-        # =====================================================
-        if not final_tags:
+            final_tags["tone"] = tags_result.get(
+                "tone",
+                ["Neutral"]
+            )
 
-            final_tags = {
-                "type": [],
-                "tone": ["Neutral"],
-                "pattern": "Occasional",
-                "frequency": "Rare",
-                "focus_area": "General",
-                "emotional_signal": "Neutral"
-            }
+            final_tags["pattern"] = tags_result.get(
+                "pattern",
+                "Occasional"
+            )
+
+            final_tags["frequency"] = tags_result.get(
+                "frequency",
+                "Rare"
+            )
+
+            final_tags["focus_area"] = tags_result.get(
+                "focus_area",
+                "General"
+            )
+
+            final_tags["emotional_signal"] = tags_result.get(
+                "emotional_signal",
+                "Neutral"
+            )
 
         # =====================================================
         # FINAL RESPONSE
@@ -143,9 +160,7 @@ def process_audio(audio_path):
 
     except Exception as e:
 
-        print("\n====== PROCESS ERROR ======\n")
         print(str(e))
-        print("\n===========================\n")
 
         return {
             "success": False,
