@@ -16,7 +16,6 @@
 
 | Service | Purpose | Required |
 |---------|---------|----------|
-| **Ollama** | LLM inference (call analysis, quality scoring) | Yes |
 | **Sarvam AI** | Primary transcription (Hindi/Hinglish with diarization) | Yes |
 
 ---
@@ -27,15 +26,6 @@
 
 ```bash
 sudo apt update && sudo apt install -y python3.10 python3.10-venv python3-pip ffmpeg git
-```
-
-### 2. Install and Configure Ollama
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-sudo systemctl enable ollama
-sudo systemctl start ollama
-ollama pull gemma2:27b
 ```
 
 ### 3. Create Virtual Environment
@@ -54,11 +44,6 @@ Create a `.env` file in the project root:
 cat > .env << 'EOF'
 # Flask
 SECRET_KEY=your-secret-key-here
-
-# LLM (Ollama)
-LLM_BASE_URL=http://localhost:11434
-LLM_MODEL=gemma2:27b
-LLM_TIMEOUT=600
 
 # Transcription - Sarvam AI (primary)
 SARVAM_API_KEY=your-sarvam-api-key
