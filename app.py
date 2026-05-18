@@ -1,8 +1,6 @@
 # app.py
 
-
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 import os
@@ -11,9 +9,7 @@ import requests
 
 from services.audio_processor import process_audio
 
-
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
 UPLOAD_FOLDER = "uploads"
 
