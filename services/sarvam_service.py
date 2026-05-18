@@ -283,32 +283,32 @@ Transcript:
             .strip()
         )
 
+
         parsed = json.loads(content)
 
+        # If type is empty list, set to ["Normal"]
+        type_value = parsed.get("type", ["Normal"])
+        if not type_value:
+            type_value = ["Normal"]
+
         return {
-
-            "type": parsed.get("type", []),
-
+            "type": type_value,
             "tone": parsed.get(
                 "tone",
                 ["Neutral"]
             ),
-
             "pattern": parsed.get(
                 "pattern",
                 "Occasional"
             ),
-
             "frequency": parsed.get(
                 "frequency",
                 "Rare"
             ),
-
             "focus_area": parsed.get(
                 "focus_area",
                 "General"
             ),
-
             "emotional_signal": parsed.get(
                 "emotional_signal",
                 "Neutral"
@@ -320,7 +320,7 @@ Transcript:
         print(str(e))
 
         return {
-            "type": [],
+            "type": ["Neutral"],
             "tone": ["Neutral"],
             "pattern": "Occasional",
             "frequency": "Rare",
