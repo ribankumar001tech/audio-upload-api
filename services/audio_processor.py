@@ -2,7 +2,8 @@
 
 from services.sarvam_service import (
     transcribe_audio,
-    analyze_conversation_tags
+    analyze_conversation_tags,
+    local_tag_analysis
 )
 
 
@@ -100,6 +101,12 @@ def process_audio(audio_path):
             transcript_text
         )
 
+        # Debugging: show raw tags_result to help identify unexpected shapes
+        # try:
+        #     print("DEBUG: tags_result ->", tags_result)
+        # except Exception:
+        #     print("DEBUG: tags_result (unprintable)")
+
         # =====================================================
         # SAFE TAG FALLBACK
         # =====================================================
@@ -146,6 +153,26 @@ def process_audio(audio_path):
                 "emotional_signal",
                 "Neutral"
             )
+
+        # =====================================================
+        # Merge local heuristic for critical overrides
+        # If local heuristic finds a stronger focus/frequency/pattern, prefer it
+        try:
+            local = local_tag_analysis(transcript_text)
+            if isinstance(local, dict):
+                # prefer local focus if it is not General
+                if local.get("focus_area") and local.get("focus_area") != "General":
+                    final_tags["focus_area"] = local.get("focus_area")
+
+                # prefer local frequency if it's more than Rare
+                if local.get("frequency") and local.get("frequency") != "Rare":
+                    final_tags["frequency"] = local.get("frequency")
+
+                # prefer local pattern if it indicates escalation or higher
+                if local.get("pattern") and local.get("pattern") != "Occasional":
+                    final_tags["pattern"] = local.get("pattern")
+        except Exception:
+            pass
 
         # =====================================================
         # FINAL RESPONSE

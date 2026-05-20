@@ -1,23 +1,17 @@
-# app.py
-
+# # app.py
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from werkzeug.utils import secure_filename
-
-import os
 import uuid
+import tempfile
 import requests
+import os
 
 from services.audio_processor import process_audio
 
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
-
-UPLOAD_FOLDER = "uploads"
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+CORS(app)
 
 ALLOWED_EXTENSIONS = {
     "mp3",
@@ -59,9 +53,9 @@ def health():
 @app.route("/upload", methods=["POST"])
 def upload_audio():
 
-    try:
+    temp_file_path = None
 
-        file_path = None
+    try:
 
         # =====================================================
         # GENERATE JOB ID
@@ -91,14 +85,15 @@ def upload_audio():
 
             extension = file.filename.rsplit(".", 1)[1].lower()
 
-            filename = f"{job_id}.{extension}"
-
-            file_path = os.path.join(
-                UPLOAD_FOLDER,
-                secure_filename(filename)
+            # create temporary file
+            temp_file = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=f".{extension}"
             )
 
-            file.save(file_path)
+            file.save(temp_file.name)
+
+            temp_file_path = temp_file.name
 
         # =====================================================
         # CASE 2 → AUDIO URL
@@ -116,7 +111,7 @@ def upload_audio():
                     "message": "audio_url is required"
                 }), 400
 
-            response = requests.get(audio_url)
+            response = requests.get(audio_url, timeout=60)
 
             if response.status_code != 200:
                 return jsonify({
@@ -124,15 +119,15 @@ def upload_audio():
                     "message": "Failed to download audio"
                 }), 400
 
-            filename = f"{job_id}.mp3"
-
-            file_path = os.path.join(
-                UPLOAD_FOLDER,
-                filename
+            temp_file = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".mp3"
             )
 
-            with open(file_path, "wb") as f:
-                f.write(response.content)
+            temp_file.write(response.content)
+            temp_file.close()
+
+            temp_file_path = temp_file.name
 
         else:
 
@@ -145,11 +140,7 @@ def upload_audio():
         # PROCESS AUDIO
         # =====================================================
 
-        result = process_audio(file_path)
-
-        # print("\n================ RESULT ================\n")
-        # print(result)
-        # print("\n========================================\n")
+        result = process_audio(temp_file_path)
 
         # =====================================================
         # HANDLE ERRORS
@@ -167,14 +158,11 @@ def upload_audio():
         # FINAL RESPONSE
         # =====================================================
 
-
-        # Include analysis in the response (contains sensitive_words)
         final_response = {
             "job_id": job_id,
             "status": "completed",
             "transcript": result.get("transcript", []),
-            "tags": result.get("tags", {}),
-            # "analysis": result.get("analysis", {})
+            "tags": result.get("tags", {})
         }
 
         return jsonify(final_response)
@@ -185,6 +173,21 @@ def upload_audio():
             "success": False,
             "error": str(e)
         }), 500
+
+    finally:
+
+        # =====================================================
+        # DELETE TEMP FILE
+        # =====================================================
+
+        try:
+
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+
+        except Exception as cleanup_error:
+
+            print("FILE DELETE ERROR:", cleanup_error)
 
 
 # =========================================================
