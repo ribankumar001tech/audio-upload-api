@@ -9,5 +9,6 @@ Jinja2==3.1.6
 MarkupSafe==3.0.3
 python-dotenv==1.2.2
 requests==2.34.0
+sarvamai==0.1.28
 urllib3==2.7.0
 Werkzeug==3.1.8

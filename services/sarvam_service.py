@@ -1,12 +1,17 @@
-import os
+import glob
 import json
-import requests
-import mimetypes
+import os
 import re
+import shutil
 import subprocess
 import tempfile
-import shutil
+import requests
 from pathlib import Path
+
+from dotenv import load_dotenv
+from sarvamai import SarvamAI
+
+load_dotenv()
 
 
 def _split_audio_chunks(input_path, chunk_len=25):
@@ -55,8 +60,90 @@ SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 # TRANSCRIBE AUDIO
 # =====================================================
 
-def transcribe_audio(audio_path):
+def _normalize_sarvam_diarized_entry(entry, idx, default_language="en-IN"):
+    return {
+        "call_id": 1,
+        "confidence": 1.0,
+        "created_at": None,
+        "end_time": float(entry.get("end_time_seconds", entry.get("end_time", 0))),
+        "id": idx,
+        "language": default_language,
+        "original_text": entry.get("transcript") or entry.get("text") or None,
+        "speaker": str(entry.get("speaker_id") or entry.get("speaker") or "Speaker 1").strip(),
+        "start_time": float(entry.get("start_time_seconds", entry.get("start_time", 0))),
+        "text": str(entry.get("transcript") or entry.get("text") or "").strip(),
+    }
 
+
+def _parse_sarvam_batch_output(data):
+    diarized = data.get("diarized_transcript")
+    if isinstance(diarized, dict):
+        entries = diarized.get("entries") or []
+    else:
+        entries = []
+
+    if not entries:
+        return None
+
+    default_language = data.get("language_code", "en-IN") or "en-IN"
+    segments = [
+        _normalize_sarvam_diarized_entry(entry, idx + 1, default_language=default_language)
+        for idx, entry in enumerate(entries)
+        if entry.get("transcript")
+    ]
+
+    if not segments:
+        return None
+
+    return {
+        "success": True,
+        "segments": segments,
+        "raw": data,
+    }
+
+
+def _transcribe_audio_batch(audio_path):
+    if not SARVAM_API_KEY:
+        return {"success": False, "error": "SARVAM_API_KEY is not configured"}
+
+    try:
+        client = SarvamAI(api_subscription_key=SARVAM_API_KEY)
+        job = client.speech_to_text_job.create_job(
+            model="saarika:v2.5",
+            language_code="unknown",
+            with_diarization=True,
+            with_timestamps=True,
+        )
+
+        job.upload_files([audio_path])
+        job.start()
+        job.wait_until_complete(timeout=600)
+
+        temp_dir = tempfile.mkdtemp(prefix="sarvam_batch_output_")
+        try:
+            job.download_outputs(temp_dir)
+            json_files = glob.glob(os.path.join(temp_dir, "*.json"))
+            for json_file in json_files:
+                with open(json_file, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                result = _parse_sarvam_batch_output(data)
+                if result:
+                    return result
+
+            return {"success": False, "error": "No diarized transcript found in Sarvam batch output"}
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    except Exception as e:
+        return {"success": False, "error": f"Sarvam batch diarization failed: {str(e)}"}
+
+
+def transcribe_audio(audio_path):
+    batch_result = _transcribe_audio_batch(audio_path)
+    if batch_result.get("success"):
+        return batch_result
+
+    # Fallback to the REST endpoint if batch diarization fails
     url = "https://api.sarvam.ai/speech-to-text"
 
     mime_type, _ = mimetypes.guess_type(audio_path)
@@ -74,7 +161,7 @@ def transcribe_audio(audio_path):
                 files = {"file": (os.path.basename(p), audio_file, mime_type)}
                 data = {"model": "saarika:v2.5"}
                 return requests.post(url, headers=headers, files=files, data=data, timeout=120)
-        except Exception as e:
+        except Exception:
             return None
 
     response = _upload_file(audio_path)
@@ -106,7 +193,6 @@ def transcribe_audio(audio_path):
                 for idx, chunk_path in enumerate(chunks):
                     r = _upload_file(chunk_path)
                     if not r or r.status_code != 200:
-                        # cleanup
                         for c in chunks:
                             try:
                                 os.remove(c)
@@ -122,12 +208,7 @@ def transcribe_audio(audio_path):
                         or ""
                     )
                     lines = [l.strip() for l in text.split("\n") if l.strip()]
-                    # create segments with adjusted times (approximate)
                     for i, line in enumerate(lines, start=1):
-                        # compute start/end using chunk index and 5s per line heuristic
-                        start_time = idx * 25 + (i - 1) * 5
-                        end_time = start_time + 5
-                        # speaker split
                         if "," in line:
                             speaker, msg = line.split(",", 1)
                         elif ":" in line:
@@ -140,17 +221,16 @@ def transcribe_audio(audio_path):
                             "call_id": 1,
                             "confidence": 1.0,
                             "created_at": data.get("created_at", "2026-03-31 12:59:24"),
-                            "end_time": end_time,
+                            "end_time": idx * 25 + i * 5,
                             "id": seg_id,
                             "language": data.get("language_code", "en-IN"),
                             "original_text": None,
                             "speaker": speaker.strip(),
-                            "start_time": start_time,
+                            "start_time": idx * 25 + (i - 1) * 5,
                             "text": msg.strip()
                         })
                         seg_id += 1
 
-                # cleanup chunk files
                 for c in chunks:
                     try:
                         os.remove(c)
@@ -163,9 +243,7 @@ def transcribe_audio(audio_path):
         return {"success": False, "error": response.text}
 
     try:
-
         data = response.json()
-
         text = (
             data.get("transcript")
             or data.get("text")
@@ -174,28 +252,17 @@ def transcribe_audio(audio_path):
         )
 
         if not text:
-            return {
-                "success": False,
-                "error": "No transcript found",
-                "raw": data
-            }
+            return {"success": False, "error": "No transcript found", "raw": data}
 
-        lines = [
-            l.strip()
-            for l in text.split("\n")
-            if l.strip()
-        ]
-
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
         segments = []
 
         for i, line in enumerate(lines, start=1):
-
             if "," in line:
                 speaker, msg = line.split(",", 1)
             elif ":" in line:
                 speaker, msg = line.split(":", 1)
             else:
-                # Auto alternating speakers
                 speaker = f"Speaker {(i % 2) + 1}"
                 msg = line
 
@@ -212,17 +279,9 @@ def transcribe_audio(audio_path):
                 "text": msg.strip()
             })
 
-        return {
-            "success": True,
-            "segments": segments,
-            "raw": data
-        }
-
+        return {"success": True, "segments": segments, "raw": data}
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"Parse error: {str(e)}"
-        }
+        return {"success": False, "error": f"Parse error: {str(e)}"}
 
 
 def build_transcript_text(segments):

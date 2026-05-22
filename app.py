@@ -1,11 +1,29 @@
 # # app.py
 
+import os
+import sys
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+VENV_PYTHON = os.path.join(PROJECT_DIR, "venv", "bin", "python")
+
+
+def _running_in_venv():
+    return (
+        hasattr(sys, "real_prefix") or
+        (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix) or
+        (hasattr(sys, "base_exec_prefix") and sys.base_exec_prefix != sys.exec_prefix)
+    )
+
+
+if not _running_in_venv() and os.path.exists(VENV_PYTHON):
+    os.execv(VENV_PYTHON, [VENV_PYTHON] + sys.argv)
+
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
 import tempfile
 import requests
-import os
 
 from services.audio_processor import process_audio
 
