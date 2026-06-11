@@ -196,22 +196,26 @@ def process_audio(audio_path):
             transcript_text
         )
 
-        # Debugging: show raw tags_result to help identify unexpected shapes
+        # Debugging: show raw transcript and tags_result to identify unexpected shapes
         # try:
-        #     print("DEBUG: tags_result ->", tags_result)
-        # except Exception:
-        #     print("DEBUG: tags_result (unprintable)")
+        #     print("--- DEBUG TRANSCRIPT ---")
+        #     print(transcript_text)
+        #     print("--- DEBUG TAGS RESULT ---")
+        #     print(tags_result)
+        #     print("-------------------------")
+        # except Exception as e:
+        #     print("DEBUG print error:", e)
 
         # =====================================================
         # SAFE TAG FALLBACK
         # =====================================================
         final_tags = {
             "type": [],
-            "tone": ["Neutral"],
-            "pattern": "Occasional",
-            "frequency": "Rare",
-            "focus_area": "General",
-            "emotional_signal": "Neutral"
+            "tone": [],
+            "pattern": "",
+            "frequency": "",
+            "focus_area": "",
+            "emotional_signal": ""
         }
 
         # =====================================================
@@ -226,27 +230,27 @@ def process_audio(audio_path):
 
             final_tags["tone"] = tags_result.get(
                 "tone",
-                ["Neutral"]
+                []
             )
 
             final_tags["pattern"] = tags_result.get(
                 "pattern",
-                "Occasional"
+                ""
             )
 
             final_tags["frequency"] = tags_result.get(
                 "frequency",
-                "Rare"
+                ""
             )
 
             final_tags["focus_area"] = tags_result.get(
                 "focus_area",
-                "General"
+                ""
             )
 
             final_tags["emotional_signal"] = tags_result.get(
                 "emotional_signal",
-                "Neutral"
+                ""
             )
 
         # =====================================================
@@ -255,19 +259,119 @@ def process_audio(audio_path):
         try:
             local = local_tag_analysis(transcript_text)
             if isinstance(local, dict):
-                # prefer local focus if it is not General
-                if local.get("focus_area") and local.get("focus_area") != "General":
+                # prefer local focus if it is detected
+                if local.get("focus_area") and local.get("focus_area") != "":
                     final_tags["focus_area"] = local.get("focus_area")
 
-                # prefer local frequency if it's more than Rare
-                if local.get("frequency") and local.get("frequency") != "Rare":
+                # prefer local frequency if it is detected
+                if local.get("frequency") and local.get("frequency") != "":
                     final_tags["frequency"] = local.get("frequency")
 
-                # prefer local pattern if it indicates escalation or higher
-                if local.get("pattern") and local.get("pattern") != "Occasional":
+                # prefer local pattern if it is detected
+                if local.get("pattern") and local.get("pattern") != "":
                     final_tags["pattern"] = local.get("pattern")
         except Exception:
             pass
+
+        # =====================================================
+        # STRICT TAG FILTERING AGAINST FIXED LIST
+        # =====================================================
+        CANONICAL_TAGS = {
+            "type": {
+                "harassment": "Harassment",
+                "insult": "Insult",
+                "manipulation": "Manipulation",
+                "intimidation": "Intimidation",
+                "mockery": "Mockery"
+            },
+            "tone": {
+                "hostile": "Hostile",
+                "aggressive": "Aggressive",
+                "sarcastic": "Sarcastic",
+                "dismissive": "Dismissive",
+                "threatening": "Threatening"
+            },
+            "pattern": {
+                "isolated": "Isolated",
+                "occasional": "Occasional",
+                "frequent": "Frequent",
+                "escalating": "Escalating",
+                "cyclical": "Cyclical"
+            },
+            "focus_area": {
+                "physical": "Physical",
+                "mental": "Mental",
+                "academic": "Academic",
+                "personal": "Personal",
+                "offensive": "Offensive"
+            },
+            "emotional_signal": {
+                "nervous": "Nervous",
+                "defensive": "Defensive",
+                "quiet": "Quiet",
+                "doubtful": "Doubtful",
+                "dazed": "Dazed"
+            }
+        }
+
+        filtered_tags = {}
+
+        # type
+        raw_type = final_tags.get("type", [])
+        if isinstance(raw_type, list):
+            types_list = []
+            for t in raw_type:
+                t_clean = str(t).strip().lower()
+                if t_clean in CANONICAL_TAGS["type"]:
+                    types_list.append(CANONICAL_TAGS["type"][t_clean])
+            filtered_tags["type"] = types_list
+        elif isinstance(raw_type, str):
+            t_clean = raw_type.strip().lower()
+            filtered_tags["type"] = [CANONICAL_TAGS["type"][t_clean]] if t_clean in CANONICAL_TAGS["type"] else []
+        else:
+            filtered_tags["type"] = []
+
+        # tone
+        raw_tone = final_tags.get("tone", [])
+        if isinstance(raw_tone, list):
+            tone_list = []
+            for t in raw_tone:
+                t_clean = str(t).strip().lower()
+                if t_clean in CANONICAL_TAGS["tone"]:
+                    tone_list.append(CANONICAL_TAGS["tone"][t_clean])
+            filtered_tags["tone"] = tone_list
+        elif isinstance(raw_tone, str):
+            t_clean = raw_tone.strip().lower()
+            filtered_tags["tone"] = [CANONICAL_TAGS["tone"][t_clean]] if t_clean in CANONICAL_TAGS["tone"] else []
+        else:
+            filtered_tags["tone"] = []
+
+        # pattern
+        raw_pattern = final_tags.get("pattern", "")
+        if isinstance(raw_pattern, str):
+            p_clean = raw_pattern.strip().lower()
+            filtered_tags["pattern"] = CANONICAL_TAGS["pattern"][p_clean] if p_clean in CANONICAL_TAGS["pattern"] else ""
+        else:
+            filtered_tags["pattern"] = ""
+
+        # focus_area
+        raw_focus = final_tags.get("focus_area", "")
+        if isinstance(raw_focus, str):
+            f_clean = raw_focus.strip().lower()
+            filtered_tags["focus_area"] = CANONICAL_TAGS["focus_area"][f_clean] if f_clean in CANONICAL_TAGS["focus_area"] else ""
+        else:
+            filtered_tags["focus_area"] = ""
+
+        # emotional_signal
+        raw_emotional = final_tags.get("emotional_signal", "")
+        if isinstance(raw_emotional, str):
+            e_clean = raw_emotional.strip().lower()
+            filtered_tags["emotional_signal"] = CANONICAL_TAGS["emotional_signal"][e_clean] if e_clean in CANONICAL_TAGS["emotional_signal"] else ""
+        else:
+            filtered_tags["emotional_signal"] = ""
+
+        # frequency
+        filtered_tags["frequency"] = ""
 
         # =====================================================
         # FINAL RESPONSE
@@ -276,7 +380,7 @@ def process_audio(audio_path):
             "success": True,
             "job_id": transcription_result.get("job_id"),
             "status": "completed",
-            "tags": final_tags,
+            "tags": filtered_tags,
             "transcript": cleaned_segments
         }
 

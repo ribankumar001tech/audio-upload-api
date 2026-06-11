@@ -311,20 +311,18 @@ def analyze_conversation_tags(transcript_text):
 
 Analyze the following conversation transcript and return a JSON object with EXACTLY these keys:
 
-- "type": list — one or more of: ["Normal", "Insult", "Harassment", "Intimidation", "Mockery", "Threat"]
-- "tone": list — one or more of: ["Neutral", "Aggressive", "Hostile", "Threatening", "Sarcastic", "Dismissive", "Empathetic", "Frustrated"]
-- "pattern": string — one of: "Occasional", "Escalating", "Frequent", "Isolated"
-- "frequency": string — one of: "Rare", "Occasional", "Frequent"
-- "focus_area": string — one of: "General", "Personal", "Academic", "Physical", "Mental"
-- "emotional_signal": string — one of: "Neutral", "Frustrated", "Angry", "Fearful", "Defensive", "Doubtful", "Sad"
+- "type": list — one or more of: ["Harassment", "Insult", "Manipulation", "Intimidation", "Mockery"]
+- "tone": list — one or more of: ["Hostile", "Aggressive", "Sarcastic", "Dismissive", "Threatening"]
+- "pattern": string — one of: "Isolated", "Occasional", "Frequent", "Escalating", "Cyclical"
+- "focus_area": string — one of: "Physical", "Mental", "Academic", "Personal", "Offensive"
+- "emotional_signal": string — one of: "Nervous", "Defensive", "Quiet", "Doubtful", "Dazed"
 
 Detection guidelines:
-- Detect insults, threats, harassment, mockery, or intimidation in ANY language (English, Hindi, Hinglish, regional slang)
+- Detect insults, threats, harassment, mockery, intimidation, or manipulation in ANY language (English, Hindi, Hinglish, regional slang)
 - Hindi/Hinglish abuse examples: गधा, बेवकूफ, हरामी, साला, bhad me ja, teri maa, chutiya, etc.
 - Workplace intimidation: threats about job, dismissive attitude toward personal life, forced overtime, warnings
-- If the conversation is calm and professional, return type ["Normal"] and tone ["Neutral"]
+- If none of the options apply (e.g., the conversation is calm, professional, or normal), return an empty list [] for "type" and "tone", and an empty string "" for "pattern", "focus_area", and "emotional_signal".
 - Escalating pattern: hostility increases over the conversation
-- Frequent pattern: abusive language appears many times
 
 Transcript:
 \"\"\"
@@ -334,7 +332,7 @@ Transcript:
 Return ONLY a valid JSON object. No explanation, no markdown, no code fences, no extra text.
 
 Example output:
-{{"type": ["Insult", "Harassment"], "tone": ["Hostile", "Aggressive"], "pattern": "Escalating", "frequency": "Frequent", "focus_area": "Personal", "emotional_signal": "Frustrated"}}"""
+{{"type": ["Insult", "Harassment"], "tone": ["Hostile", "Aggressive"], "pattern": "Escalating", "focus_area": "Personal", "emotional_signal": "Defensive"}}"""
 
     payload = {
         "model": "sarvam-105b",
@@ -343,12 +341,12 @@ Example output:
     }
 
     default_result = {
-        "type": ["Normal"],
-        "tone": ["Neutral"],
-        "pattern": "Occasional",
-        "frequency": "Rare",
-        "focus_area": "General",
-        "emotional_signal": "Neutral"
+        "type": [],
+        "tone": [],
+        "pattern": "",
+        "frequency": "",
+        "focus_area": "",
+        "emotional_signal": ""
     }
 
     try:
@@ -382,12 +380,12 @@ Example output:
 
         # Safely build result with fallbacks for each key
         result = {
-            "type": parsed.get("type", ["Normal"]),
-            "tone": parsed.get("tone", ["Neutral"]),
-            "pattern": parsed.get("pattern", "Occasional"),
-            "frequency": parsed.get("frequency", "Rare"),
-            "focus_area": parsed.get("focus_area", "General"),
-            "emotional_signal": parsed.get("emotional_signal", "Neutral")
+            "type": parsed.get("type", []),
+            "tone": parsed.get("tone", []),
+            "pattern": parsed.get("pattern", ""),
+            "frequency": parsed.get("frequency", ""),
+            "focus_area": parsed.get("focus_area", ""),
+            "emotional_signal": parsed.get("emotional_signal", "")
         }
 
         # Ensure type and tone are always lists
@@ -476,10 +474,10 @@ def local_tag_analysis(transcript_text: str) -> dict:
     ]
 
     types = []
-    tone = ["Neutral"]
-    emotional = "Neutral"
-    pattern = "Occasional"
-    frequency = "Rare"
+    tone = []
+    emotional = ""
+    pattern = ""
+    frequency = ""
 
     if any(w in text for w in insults) or any(w in text for w in hindi_insults) or any(w in text for w in hinglish_insults):
         types.append("Insult")
@@ -496,7 +494,7 @@ def local_tag_analysis(transcript_text: str) -> dict:
         pattern = "Escalating"
         frequency = "Frequent"
     if not types:
-        types = ["Normal"]
+        types = []
 
     if any(w in text for w in threats_verbs) or re.search(r"\b(kill|hurt|destroy|attack|beat)\b", text):
         tone = ["Threatening"]
@@ -511,17 +509,17 @@ def local_tag_analysis(transcript_text: str) -> dict:
         tone = ["Hostile"]
         emotional = "Frustrated"
     elif any(w in text for w in hindi_frustration):
-        tone = ["Neutral"]
+        tone = []
         emotional = "Frustrated"
     elif re.search(r"frustrat", text):
         tone = ["Hostile"]
         emotional = "Frustrated"
     elif re.search(r"\?{1,}$", transcript_text.strip()):
-        tone = ["Neutral"]
+        tone = []
         emotional = "Doubtful"
     else:
-        tone = ["Neutral"]
-        emotional = "Neutral"
+        tone = []
+        emotional = ""
 
     neg_count = sum(text.count(w) for w in insults + harassment + threats_verbs)
     total_words = max(1, len(re.findall(r"\w+", text)))
@@ -534,8 +532,8 @@ def local_tag_analysis(transcript_text: str) -> dict:
         frequency = "Occasional"
         pattern = "Occasional"
     else:
-        frequency = "Rare"
-        pattern = "Occasional"
+        frequency = ""
+        pattern = ""
 
     if re.search(r"\boccasional\b", text):
         frequency = "Occasional"
@@ -553,7 +551,7 @@ def local_tag_analysis(transcript_text: str) -> dict:
     elif any(w in text for w in insults + harassment + threats_verbs):
         focus = "Personal"
     else:
-        focus = "General"
+        focus = ""
 
     if re.search(r"\bpersonal\b", text):
         focus = "Personal"
