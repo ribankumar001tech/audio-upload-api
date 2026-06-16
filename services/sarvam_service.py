@@ -1,5 +1,6 @@
 import glob
 import json
+import mimetypes
 import os
 import re
 import shutil
