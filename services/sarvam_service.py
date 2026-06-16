@@ -139,12 +139,25 @@ def _transcribe_audio_batch(audio_path):
         return {"success": False, "error": f"Sarvam batch diarization failed: {str(e)}"}
 
 
-def transcribe_audio(audio_path):
-    batch_result = _transcribe_audio_batch(audio_path)
-    if batch_result.get("success"):
-        return batch_result
+def _get_audio_duration(audio_path):
+    """Retrieve the duration of an audio file in seconds using ffprobe."""
+    if shutil.which("ffprobe") is None:
+        return None
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            audio_path
+        ]
+        output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode("utf-8").strip()
+        return float(output)
+    except Exception:
+        return None
 
-    # Fallback to the REST endpoint if batch diarization fails
+
+def _transcribe_audio_rest(audio_path):
     url = "https://api.sarvam.ai/speech-to-text"
 
     mime_type, _ = mimetypes.guess_type(audio_path)
@@ -283,6 +296,25 @@ def transcribe_audio(audio_path):
         return {"success": True, "segments": segments, "raw": data}
     except Exception as e:
         return {"success": False, "error": f"Parse error: {str(e)}"}
+
+
+def transcribe_audio(audio_path):
+    duration = _get_audio_duration(audio_path)
+
+    # Route short audio files (<= 30 seconds) directly to real-time REST API for speed
+    if duration is not None and duration <= 30.0:
+        rest_result = _transcribe_audio_rest(audio_path)
+        if rest_result.get("success"):
+            return rest_result
+        return _transcribe_audio_batch(audio_path)
+
+    # Route long audio files (> 30 seconds or unknown duration) to Batch API first
+    batch_result = _transcribe_audio_batch(audio_path)
+    if batch_result.get("success"):
+        return batch_result
+
+    # Fallback to chunked/REST upload if Batch API fails
+    return _transcribe_audio_rest(audio_path)
 
 
 def build_transcript_text(segments):
